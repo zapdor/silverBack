@@ -1,7 +1,7 @@
 import email
 import imaplib
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from Marketplace import make_marketplace
 from Transaction import make_transaction
@@ -9,7 +9,11 @@ from User import make_user
 
 
 def main():
-    user = make_user('gmail', 'eratedassignment@gmail.com', 'doingstuff123')
+    print('Please insert login details')
+    mail_type = input("Enter your mail provider (gmail/yahoo/other): ")
+    username = input("Username(including @ part): ")
+    passw = input("Password: ")
+    user = make_user(mail_type, username, passw)
     marketplaces = [make_marketplace('ebay', ['ebay@ebay.com'])
                     ]
 
@@ -22,7 +26,8 @@ def main():
 
     mail_connector.select(user.mail_folder)
 
-    searchterm_since = 'SENTSINCE {}'.format(user.lastFetched)
+    since = (user.last_fetched + timedelta(days=1)).strftime("%d-%b-%Y")
+    searchterm_since = 'SENTSINCE {}'.format(since)
     for marketplace in marketplaces:
         searchterm_body = 'TEXT "{}"'.format(marketplace.body)
         searchterm_domains = ""
@@ -38,7 +43,7 @@ def main():
     new_mails_uids = b','.join(data[0].split())
     # (RFC822) is used to fetch the messages bodies
     if len(new_mails_uids) < 1:
-        print('OMG, they killed kenny! Also, everything is up to date')
+        print('OMG, they killed kenny! Also, there are no new messages to fetch')
         sys.exit(1)
 
     result, data = mail_connector.uid('fetch', new_mails_uids, '(RFC822)')
@@ -48,17 +53,17 @@ def main():
     new_email_messages = [email.message_from_bytes(raw_mail) for raw_mail in new_raw_emails]
 
     all_transactions = list()
-    latest_fetch = datetime.min.strftime("%d-%b-%Y")
+    latest_fetch = datetime.min
 
     for msg in new_email_messages:
         market = find_market_place(marketplaces, msg)
-        created_at = email.utils.parsedate_to_datetime(msg['Date']).strftime("%d-%b-%Y")
+        created_at = email.utils.parsedate_to_datetime(msg['Date'])
         transaction = make_transaction(user.id, market.id, "", "", "", 0, created_at)
         parsed_transaction = market.my_parser.parse(msg, transaction)
         all_transactions.append(parsed_transaction)
-        if latest_fetch < created_at:
+        if latest_fetch.date() < created_at.date():
             latest_fetch = created_at
-    user.lastFetched = latest_fetch
+    user.update_date_to_file(user.last_fetch_file, latest_fetch)
 
     for transaction in all_transactions:
         with open('all_transactions.txt', 'a') as the_file:
